@@ -1,6 +1,10 @@
 import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
-const InstructionsPage = ({ onComplete }) => {
+const InstructionsPage = () => {
+  const navigate = useNavigate();
+  const { testId } = useParams();
+
   const [agreements, setAgreements] = useState({
     readInstructions: false,
     noCheating: false,
@@ -26,7 +30,7 @@ const InstructionsPage = ({ onComplete }) => {
       setTimeLeft((prev) => {
         if (prev <= 1) {
           clearInterval(countdown);
-          onComplete?.(); // ✅ trigger parent to switch to ExamPage
+          navigate(`/test/${testId}`);
           return 0;
         }
         return prev - 1;
@@ -82,11 +86,19 @@ const InstructionsPage = ({ onComplete }) => {
   };
 
   return (
-    <div className="min-h-screen p-6 bg-gray-100 text-gray-900">
-      <div className="max-w-3xl mx-auto bg-white shadow-md rounded-lg p-8 space-y-6">
-        <h2 className="text-2xl font-bold text-center text-green-500">
-          EXAM INSTRUCTIONS
-        </h2>
+    <div className="min-h-screen p-6 bg-gray-100 text-gray-900 dark:bg-gray-900 dark:text-gray-100 transition-colors duration-500">
+      {/* Theme Toggle Button 
+      <div className="flex justify-end mb-6">
+        <button
+          onClick={toggleTheme}
+          className="px-4 py-2 rounded-md bg-green-500 hover:bg-green-600 transition-colors duration-500 text-white font-semibold"
+        >
+          {theme === "light" ? "🌙 Dark Mode" : "☀️ Light Mode"}
+        </button>
+      </div> */}
+
+      <div className="max-w-3xl mx-auto bg-white dark:bg-gray-800 shadow-md rounded-lg p-8 space-y-6">
+        <h2 className="text-2xl font-bold text-center text-green-500">EXAM INSTRUCTIONS</h2>
 
         <ul className="list-disc pl-5 space-y-2">
           <li>Keep your camera ON throughout the exam.</li>
@@ -97,12 +109,12 @@ const InstructionsPage = ({ onComplete }) => {
           <li>Maintain a stable internet connection for the entire duration.</li>
         </ul>
 
-        <p className="text-red-600 font-semibold">
+        <p className="text-red-600 dark:text-red-400 font-semibold">
           Violations of these rules may lead to disqualification.
         </p>
 
         <div className="space-y-3 mt-4">
-          {["noCheating", "noAI", "readInstructions"].map((item) => (
+          {["noCheating","noAI","readInstructions"].map((item) => (
             <label key={item} className="flex items-center space-x-2">
               <input
                 type="checkbox"
@@ -125,9 +137,7 @@ const InstructionsPage = ({ onComplete }) => {
             onClick={handleStartExam}
             disabled={!allAgreed || isSpeaking}
             className={`px-6 py-3 rounded-md font-semibold text-white transition ${
-              !allAgreed || isSpeaking
-                ? "bg-gray-400 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-700"
+              !allAgreed || isSpeaking ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
             }`}
           >
             {isSpeaking ? "🔊 Reading Instructions..." : "Start Exam"}
