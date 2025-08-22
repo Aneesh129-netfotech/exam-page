@@ -8,7 +8,7 @@ import asyncio
 from supabase import create_client
 
 from events import register_socket_events
-from test_generator import generate_questions, TestRequest  # your async generator
+from test_generator import generate_questions, TestRequest
 
 load_dotenv()
 
@@ -27,11 +27,41 @@ log.setLevel(logging.ERROR)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 register_socket_events(socketio)
 
+
 @app.route("/")
 def index():
     return jsonify({"status": "Server is running."})
 
-# GET test by ID (generate questions on the fly for demo)
+@app.route("/api/exam/<candidate_id>", methods=["GET"])
+def get_exam_for_candidate(candidate_id):
+    """
+    Returns candidate info and exam questions based on candidate_id
+    """
+    try:
+        # 1️⃣ Fetch candidate info from Supabase (replace 'candidates' with your table)
+        candidate_resp = supabase.table("candidates").select("*").eq("id", candidate_id).execute()
+        if not candidate_resp.data:
+            return jsonify({"error": "Candidate not found"}), 404
+        candidate = candidate_resp.data[0]
+ 
+        # 2️⃣ Fetch exam questions for this candidate
+        exam_id = candidate.get("exam_id")
+        test_resp = supabase.table("exams").select("*").eq("id", exam_id).execute()
+        questions = test_resp.data if test_resp.data else []
+ 
+        # 3️⃣ Return combined response
+        return jsonify({
+            "candidate": {
+                "id": candidate["id"],
+                "name": candidate["name"],
+                "email": candidate["email"],
+                "exam_id": exam_id
+            },
+            "questions": questions
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/test/<test_id>", methods=["GET"])
 def get_test(test_id):
     try:
@@ -47,7 +77,7 @@ def get_test(test_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# POST generate test
+
 @app.route("/api/test/generate", methods=["POST"])
 def generate_test_route():
     try:
@@ -66,7 +96,7 @@ def generate_test_route():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# POST submit test
+
 @app.route("/api/test/submit", methods=["POST"])
 def submit_test():
     try:
@@ -75,35 +105,32 @@ def submit_test():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# GET feedback summary
-@app.route("/api/feedback/<candidate_id>/<exam_id>", methods=["GET"])
-def get_feedback(candidate_id, exam_id):
+
+@app.route("/api/feedback/<id>/<question_set_id>", methods=["GET"])
+def get_feedback(id, question_set_id):
     try:
         response = supabase.table("violations") \
             .select("*") \
-            .eq("candidate_id", candidate_id) \
-            .eq("exam_id", exam_id) \
+            .eq("id", id) \
+            .eq("question_set_id", question_set_id) \
             .execute()
-        return jsonify(response.data[0] if response.data else {})
+        return jsonify(response.data[0] if response.data else {"message": "No feedback found"})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# POST feedback (insert or update)
 @app.route("/api/feedback", methods=["POST"])
 def post_feedback():
     try:
         data = request.get_json()
- 
-        candidate_id = data.get("candidate_id")
-        exam_id = data.get("exam_id")
- 
-        if not candidate_id or not exam_id:
-            return jsonify({"error": "candidate_id and exam_id are required"}), 400
- 
-        # Default values for all counters
+        question_set_id = data.get("question_set_id")
+
+        if not question_set_id:
+            return jsonify({"error": "question_set_id is required"}), 400
+
         feedback = {
-            "candidate_id": candidate_id,
-            "exam_id": exam_id,
+            "question_set_id": question_set_id,
+            "candidate_name": data.get("candidate_name"),
+            "candidate_email": data.get("candidate_email"),
             "tab_switches": data.get("tab_switches", 0),
             "inactivities": data.get("inactivities", 0),
             "copies": data.get("copies", 0),
@@ -111,17 +138,49 @@ def post_feedback():
             "right_clicks": data.get("right_clicks", 0),
             "text_selections": data.get("text_selections", 0),
         }
- 
-        # Upsert into Supabase (insert if not exists, update if exists)
-        response = supabase.table("violations").upsert(feedback).execute()
- 
+
+        if data.get("id"):
+            feedback["id"] = data["id"]
+            # ✅ use upsert if id is present
+            response = supabase.table("violations").upsert(feedback, on_conflict="id").execute()
+        else:
+            # ✅ plain insert lets DB generate id
+            response = supabase.table("violations").insert(feedback).execute()
+
         return jsonify({
             "status": "success",
-            "saved_data": feedback
+            "saved_data": response.data
         })
- 
+
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@socketio.on("suspicious_event")
+def handle_suspicious_event(data):
+    candidate_id = data.get("candidate_id")
+    exam_id = data.get("exam_id")
+    violation_type = data.get("violation_type")
+
+    if not candidate_id or not exam_id or not violation_type:
+        return
+    column_map = {
+        "tab_switch": "tab_switches",
+        "inactivity": "inactivities",
+        "text_selection": "text_selections",
+        "copy": "copies",
+        "paste": "pastes",
+        "right_click": "right_clicks"    }
+
+    col = column_map.get(violation_type)
+    if col:
+        try:
+            supabase.rpc("increment_violation", {
+                "cand_id": candidate_id,
+                "exam": exam_id,
+                "field": col
+            }).execute()
+        except Exception as e:
+            print(f"⚠️ Failed to update violation: {e}")
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5173, debug=False)
