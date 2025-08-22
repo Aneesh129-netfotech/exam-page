@@ -1,42 +1,65 @@
 import { useEffect, useRef, useCallback } from "react";
-import socket from "../utils/socket";
+import socket from "../../utils/socket";
 
-const ActivityMonitor = ({ questionSetId, candidateName, candidateEmail }) => {
+const ActivityMonitor = ({ candidateId, examId, candidateName, email }) => {
   const idleTimeout = useRef(null);
 
-  const report = useCallback((violationType) => {
-    socket.emit("suspicious_event", { 
-      question_set_id: questionSetId,
-      candidate_name: candidateName,
-      candidate_email: candidateEmail,
-      violation_type: violationType, 
-      timestamp: new Date().toISOString() 
-    });
-  }, [questionSetId, candidateName, candidateEmail]);
+  const report = useCallback(
+    (violationType) => {
+      socket.emit("suspicious_event", {
+        candidate_id: candidateId,
+        exam_id: examId,
+        candidate_name: candidateName,
+        candidate_email: email,
+        violation_type: violationType,
+        timestamp: new Date().toISOString(),
+      });
+    },
+    [candidateId, examId, candidateName, email]
+  );
 
   useEffect(() => {
-    const handleVisibility = () => { 
-      if (document.hidden) report("tab_switch"); 
+    // Tab switch
+    const handleVisibility = () => {
+      if (document.hidden) report("tab_switch");
     };
 
+    // Idle detection (60s)
     const resetInactivity = () => {
       clearTimeout(idleTimeout.current);
       idleTimeout.current = setTimeout(() => report("inactivity"), 60000);
     };
 
-    const handleSelection = () => report("text_selection");
-    const handleCopy = () => report("copy");
-    const handlePaste = () => report("paste");
-    const handleRightClick = () => report("right_click");
+    // Text selection
+    const handleSelection = (e) => {
+      e.preventDefault();
+      report("text_selection");
+    };
 
-    // Activity listeners
+    // Right click
+    const handleRightClick = (e) => {
+      e.preventDefault();
+      report("right_click");
+    };
+
+    // Copy
+    const handleCopy = () => {
+      report("copy");
+    };
+
+    // Paste
+    const handlePaste = () => {
+      report("paste");
+    };
+
+    // Listeners
     window.addEventListener("mousemove", resetInactivity);
     window.addEventListener("keydown", resetInactivity);
     document.addEventListener("visibilitychange", handleVisibility);
     document.addEventListener("selectstart", handleSelection);
+    document.addEventListener("contextmenu", handleRightClick);
     document.addEventListener("copy", handleCopy);
     document.addEventListener("paste", handlePaste);
-    document.addEventListener("contextmenu", handleRightClick);
 
     resetInactivity();
 
@@ -45,9 +68,9 @@ const ActivityMonitor = ({ questionSetId, candidateName, candidateEmail }) => {
       window.removeEventListener("keydown", resetInactivity);
       document.removeEventListener("visibilitychange", handleVisibility);
       document.removeEventListener("selectstart", handleSelection);
+      document.removeEventListener("contextmenu", handleRightClick);
       document.removeEventListener("copy", handleCopy);
       document.removeEventListener("paste", handlePaste);
-      document.removeEventListener("contextmenu", handleRightClick);
       clearTimeout(idleTimeout.current);
     };
   }, [report]);
