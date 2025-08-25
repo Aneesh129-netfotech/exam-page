@@ -106,7 +106,7 @@ def submit_test():
         return jsonify({"error": str(e)}), 500
 
 
-@app.route("/api/feedback/<id>/<question_set_id>", methods=["GET"])
+@app.route("/api/feedback/<question_set_id>", methods=["GET"])
 def get_feedback(id, question_set_id):
     try:
         response = supabase.table("violations") \
@@ -115,6 +115,40 @@ def get_feedback(id, question_set_id):
             .eq("question_set_id", question_set_id) \
             .execute()
         return jsonify(response.data[0] if response.data else {"message": "No feedback found"})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/results/<question_set_id>/<candidate_email>", methods=["GET"])
+def get_result_with_violations(question_set_id, candidate_email):
+    try:
+        res = supabase.table("exam_results").select("*") \
+            .eq("question_set_id", question_set_id) \
+            .eq("candidate_email", candidate_email) \
+            .limit(1).execute()
+
+        if not res.data:
+            return jsonify({"error": "Result not found"}), 404
+
+        result_row = res.data[0]
+
+        vio = supabase.table("violations").select(
+            "tab_switches,inactivities,text_selections,copies,pastes,right_clicks,face_not_visible"
+        ).eq("question_set_id", question_set_id) \
+         .eq("candidate_email", candidate_email) \
+         .limit(1).execute()
+
+        v = (vio.data[0] if vio.data else {})
+        merged = {
+            **result_row,
+            "tab_switches": v.get("tab_switches", 0),
+            "inactivities": v.get("inactivities", 0),
+            "text_selections": v.get("text_selections", 0),
+            "copies": v.get("copies", 0),
+            "pastes": v.get("pastes", 0),
+            "right_clicks": v.get("right_clicks", 0),
+            "face_not_visible": v.get("face_not_visible", 0),
+        }
+        return jsonify(merged)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -137,6 +171,7 @@ def post_feedback():
             "pastes": data.get("pastes", 0),
             "right_clicks": data.get("right_clicks", 0),
             "text_selections": data.get("text_selections", 0),
+            "face_not_visible": data.get("face_not_visible", 0),
         }
 
         if data.get("id"):
@@ -155,7 +190,7 @@ def post_feedback():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@socketio.on("suspicious_event")
+''' @socketio.on("suspicious_event")
 def handle_suspicious_event(data):
     candidate_id = data.get("candidate_id")
     exam_id = data.get("exam_id")
@@ -164,12 +199,12 @@ def handle_suspicious_event(data):
     if not candidate_id or not exam_id or not violation_type:
         return
     column_map = {
-        "tab_switch": "tab_switches",
+        "tab_switches": "tab_switches",
         "inactivity": "inactivities",
         "text_selection": "text_selections",
         "copy": "copies",
         "paste": "pastes",
-        "right_click": "right_clicks"    }
+        "right_clicks": "right_clicks"    }
 
     col = column_map.get(violation_type)
     if col:
@@ -180,7 +215,7 @@ def handle_suspicious_event(data):
                 "field": col
             }).execute()
         except Exception as e:
-            print(f"⚠️ Failed to update violation: {e}")
+            print(f"⚠️ Failed to update violation: {e}") '''
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=5173, debug=False)
